@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>幾何透視實驗室</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #16a085; --bg: #f3f4f6; }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; font-family: 'Segoe UI', sans-serif; background: var(--bg); overflow: hidden; }
+        #app { display: flex; flex-direction: column; height: 100vh; }
+        header { background: var(--primary); color: white; padding: 12px 20px; font-size: 20px; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
+        #workspace { display: flex; flex: 1; padding: 15px; gap: 15px; min-height: 0; }
+        .panel { flex: 1; background: white; border-radius: 8px; position: relative; border: 2px solid #ccc; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .label { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 4px 10px; border-radius: 4px; font-size: 14px; pointer-events: none; }
+        canvas#sectionCanvas { width: 100%; height: 100%; display: block; }
+        #controls { background: white; padding: 15px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+        .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
+        button { padding: 8px 14px; border: 1px solid #aaa; background: #fff; border-radius: 5px; cursor: pointer; transition: 0.2s; font-size: 14px; color: #444; }
+        button:hover { background: #f0f0f0; }
+        button.active { background: var(--primary); color: white; font-weight: bold; }
+        .mode-btn.active { background: var(--accent); border-color: var(--accent); }
+        .slider-group { display: flex; align-items: center; gap: 10px; background: #eee; padding: 5px 15px; border-radius: 20px; }
+        input[type=range] { width: 200px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <header>幾何截面模擬器</header>
+    <div id="workspace">
+        <div class="panel" id="view3d">
+            <div class="label">3D 立體視角</div>
+        </div>
+        <div class="panel" id="view2d">
+            <div class="label">2D 截面形狀</div>
+            <canvas id="sectionCanvas"></canvas>
+        </div>
+    </div>
+    <div id="controls">
+        <div class="row">
+            <button onclick="setShape('prism')" id="btn-prism">三角柱</button>
+            <button onclick="setShape('cube')" id="btn-cube">正方體</button>
+            <button onclick="setShape('cylinder')" id="btn-cylinder">圓柱體</button>
+            <button onclick="setShape('cone')" id="btn-cone">圓錐體</button>
+            <button onclick="setShape('tri_pyramid')" id="btn-tri_pyramid">三角錐</button>
+            <button onclick="setShape('sq_pyramid')" id="btn-sq_pyramid">四角錐</button>
+            <button onclick="setShape('sphere')" id="btn-sphere">球體</button>
+        </div>
+        <div class="row">
+            <div class="row" style="margin-right: 20px;">
+                <button onclick="setMode('horizontal')" id="mode-h" class="mode-btn">橫切 (—)</button>
+                <button onclick="setMode('vertical')" id="mode-v" class="mode-btn">縱切 ( | )</button>
+            </div>
+            <div class="slider-group">
+                <span>位置調整：</span>
+                <input type="range" id="slider" min="-1.8" max="1.8" step="0.01" value="0">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+    let scene, camera, renderer, mesh, slicePlane;
+    let currentShape = 'cone'; // 預設圓錐方便檢查
+    let cutMode = 'vertical'; 
+    
+    const canvas2d = document.getElementById('sectionCanvas');
+    const ctx2d = canvas2d.getContext('2d');
+    const container3d = document.getElementById('view3d');
+    const container2d = document.getElementById('view2d');
+
+    // 定義幾何參數
+    const SHAPES = {
+        'sq_pyramid': { rTop: 0, rBot: 2.2, h: 4, seg: 4, rot: Math.PI/4, label: '四角錐' }, 
+        'tri_pyramid': { rTop: 0, rBot: 2.2, h: 4, seg: 3, rot: 0, label: '三角錐' },
+        'cone': { rTop: 0, rBot: 1.8, h: 4, seg: 64, rot: 0, label: '圓錐' },
+        'cylinder': { rTop: 1.5, rBot: 1.5, h: 4, seg: 64, rot: 0, label: '圓柱' },
+        'prism': { rTop: 1.5, rBot: 1.5, h: 4, seg: 3, rot: -Math.PI/6, label: '三角柱' },
+        'cube': { w: 2.5, h: 2.5, d: 2.5, rot: 0, label: '正方體' },
+        'sphere': { r: 1.8, label: '球體' }
+    };
+
+    function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xfcfcfc);
+        
+        camera = new THREE.PerspectiveCamera(45, container3d.clientWidth / container3d.clientHeight, 0.1, 100);
+        camera.position.set(0, 3, 10); 
+        camera.lookAt(0, 0, 0);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        container3d.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(5, 10, 5);
+        scene.add(dirLight);
+
+        // 實體切板
+        const planeGeo = new THREE.BoxGeometry(6, 6, 0.05); 
+        const planeMat = new THREE.MeshPhongMaterial({ 
+            color: 0x16a085, 
+            transparent: true, 
+            opacity: 0.5,
+            side: THREE.DoubleSide
+        });
+        slicePlane = new THREE.Mesh(planeGeo, planeMat);
+        scene.add(slicePlane);
+
+        setShape('cone');
+        setMode('vertical');
+
+        window.addEventListener('resize', onResize);
+        onResize(); 
+        animate();
+    }
+
+    function onResize() {
+        if (container3d.clientWidth > 0) {
+            camera.aspect = container3d.clientWidth / container3d.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container3d.clientWidth, container3d.clientHeight);
+        }
+        if (container2d.clientWidth > 0) {
+            canvas2d.width = container2d.clientWidth;
+            canvas2d.height = container2d.clientHeight;
+        }
+        draw2d();
+    }
+
+    function setShape(type) {
+        currentShape = type;
+        if (mesh) scene.remove(mesh);
+        
+        const cfg = SHAPES[type];
+        let geo;
+        const mat = new THREE.MeshPhongMaterial({ color: 0x27ae60, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+        
+        if (type === 'cube') {
+            geo = new THREE.BoxGeometry(cfg.w, cfg.h, cfg.d);
+        } else if (type === 'sphere') {
+            geo = new THREE.SphereGeometry(cfg.r, 32, 32);
+        } else {
+            geo = new THREE.CylinderGeometry(cfg.rTop, cfg.rBot, cfg.h, cfg.seg);
+        }
+
+        mesh = new THREE.Mesh(geo, mat);
+        if (cfg.rot) mesh.rotation.y = cfg.rot;
+        
+        scene.add(mesh);
+        
+        document.querySelectorAll('#controls button').forEach(b => {
+            if(!b.classList.contains('mode-btn')) b.classList.remove('active');
+        });
+        document.getElementById('btn-' + type).classList.add('active');
+        draw2d();
+    }
+
+    function setMode(mode) {
+        cutMode = mode;
+        const slider = document.getElementById('slider');
+        slider.value = 0;
+
+        if (mode === 'horizontal') {
+            slicePlane.rotation.set(-Math.PI/2, 0, 0); 
+        } else {
+            slicePlane.rotation.set(0, Math.PI/2, 0); 
+        }
+
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(mode === 'horizontal' ? 'mode-h' : 'mode-v').classList.add('active');
+        draw2d();
+    }
+
+    function draw2d() {
+        const w = canvas2d.width;
+        const h = canvas2d.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const val = parseFloat(document.getElementById('slider').value);
+        const scale = 60; 
+        
+        ctx2d.clearRect(0, 0, w, h);
+        ctx2d.fillStyle = "#27ae60";
+        ctx2d.lineWidth = 3;
+        ctx2d.strokeStyle = "#145a32";
+        ctx2d.beginPath();
+
+        const cfg = SHAPES[currentShape];
+
+        // ============================
+        // 模式 A: 橫切 (Horizontal)
+        // ============================
+        if (cutMode === 'horizontal') {
+            // ... (橫切邏輯保持不變)
+            if (currentShape === 'sphere') {
+                let r = Math.sqrt(Math.max(0, cfg.r**2 - val**2)) * scale;
+                ctx2d.arc(cx, cy, r, 0, Math.PI*2);
+            } else if (currentShape === 'cube') {
+                if (Math.abs(val) < cfg.h/2) 
+                    ctx2d.rect(cx - cfg.w*scale/2, cy - cfg.d*scale/2, cfg.w*scale, cfg.d*scale);
+            } else {
+                let halfH = cfg.h / 2;
+                if (Math.abs(val) < halfH) {
+                    let ratio = (halfH - val) / cfg.h;
+                    let currentR = cfg.rTop + (cfg.rBot - cfg.rTop) * ratio;
+                    
+                    if (currentShape === 'cylinder' || currentShape === 'cone') {
+                        ctx2d.arc(cx, cy, currentR * scale, 0, Math.PI*2);
+                    } else if (currentShape === 'sq_pyramid') {
+                        // 四角錐 (轉正後橫切是正方形)
+                        let side = currentR * scale * 1.414; 
+                        ctx2d.rect(cx - side/2, cy - side/2, side, side);
+                    } else {
+                        drawPolygon(ctx2d, cx, cy, cfg.seg, currentR * scale);
+                    }
+                }
+            }
+        } 
+        // ============================
+        // 模式 B: 縱切 (Vertical)
+        // ============================
+        else {
+            let dist = Math.abs(val);
+            let maxHeight = (cfg.h || 4) * scale;
+            
+            if (currentShape === 'sphere') {
+                let r = Math.sqrt(Math.max(0, cfg.r**2 - dist**2)) * scale;
+                ctx2d.arc(cx, cy, r, 0, Math.PI*2);
+            }
+            else if (currentShape === 'cube') {
+                 if (dist < cfg.w/2) 
+                    ctx2d.rect(cx - cfg.d*scale/2, cy - cfg.h*scale/2, cfg.d*scale, cfg.h*scale);
+            }
+            else if (currentShape === 'cylinder' || currentShape === 'prism') {
+                if (dist < cfg.rBot) {
+                    let w_slice = 0;
+                    if (currentShape === 'cylinder') w_slice = 2 * Math.sqrt(cfg.rBot**2 - dist**2) * scale;
+                    else w_slice = 2 * (cfg.rBot - dist) * scale;
+                    if (w_slice > 0) ctx2d.rect(cx - w_slice/2, cy - maxHeight/2, w_slice, maxHeight);
+                }
+            }
+            // ============================
+            // 重點修正：圓錐頂點切面
+            // ============================
+            else if (currentShape === 'cone') {
+                if (dist < cfg.rBot) {
+                    let botW = 2 * Math.sqrt(cfg.rBot**2 - dist**2) * scale;
+                    let cutH = cfg.h * (1 - dist/cfg.rBot) * scale;
+                    let baseY = cy + maxHeight/2;
+                    let topY = baseY - cutH;
+                    
+                    ctx2d.moveTo(cx - botW/2, baseY); // 左下
+
+                    // 【關鍵修正】：如果非常接近中心，畫三角形；否則畫雙曲線
+                    if (dist < 0.05) {
+                        ctx2d.lineTo(cx, topY); // 直接連到頂點 (三角形)
+                    } else {
+                        // 畫拱形 (雙曲線模擬)
+                        ctx2d.quadraticCurveTo(cx, topY - (cutH*0.05), cx + botW/2, baseY);
+                    }
+                    
+                    ctx2d.lineTo(cx + botW/2, baseY); // 右下
+                    ctx2d.closePath(); // 封底
+                }
+            }
+            else if (currentShape === 'sq_pyramid') {
+                // 四角錐 (正放)
+                let L = cfg.rBot * Math.sqrt(2); // 邊長
+                let sideDist = L / 2; 
+                if (dist < sideDist) {
+                    let botW = L * scale; 
+                    let cutH = cfg.h * (1 - dist/sideDist) * scale;
+                    let topW = 2 * dist * scale;
+                    let baseY = cy + maxHeight/2;
+                    let topY = baseY - cutH;
+                    ctx2d.moveTo(cx - topW/2, topY);
+                    ctx2d.lineTo(cx + topW/2, topY);
+                    ctx2d.lineTo(cx + botW/2, baseY);
+                    ctx2d.lineTo(cx - botW/2, baseY);
+                }
+            }
+            else if (currentShape === 'tri_pyramid') {
+                let R = cfg.rBot;
+                if (dist < R) {
+                    let botW = 1.732 * (R - dist) * scale; 
+                    let cutH = cfg.h * (1 - dist/R) * scale;
+                    let baseY = cy + maxHeight/2;
+                    let topY = baseY - cutH;
+                    ctx2d.moveTo(cx, topY);
+                    ctx2d.lineTo(cx + botW/2, baseY);
+                    ctx2d.lineTo(cx - botW/2, baseY);
+                }
+            }
+        }
+
+        ctx2d.fill();
+        ctx2d.stroke();
+    }
+
+    function drawPolygon(ctx, x, y, sides, radius) {
+        if (radius <= 0) return;
+        ctx.moveTo(x + radius * Math.cos(-Math.PI/2), y + radius * Math.sin(-Math.PI/2));
+        for (let i = 1; i <= sides; i++) {
+            let angle = i * 2 * Math.PI / sides - Math.PI/2;
+            ctx.lineTo(x + radius * Math.cos(angle), y + radius * Math.sin(angle));
+        }
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        const val = parseFloat(document.getElementById('slider').value);
+        
+        if (cutMode === 'horizontal') {
+            slicePlane.position.set(0, val, 0);
+        } else {
+            slicePlane.position.set(val, 0, 0);
+        }
+        
+        renderer.render(scene, camera);
+        // draw2d(); // 這裡不需要重複呼叫，onResize 和滑桿事件會處理
+    }
+
+    // 監聽滑桿即時更新 2D
+    document.getElementById('slider').addEventListener('input', draw2d);
+
+    init();
+</script>
+</body>
+</html>
