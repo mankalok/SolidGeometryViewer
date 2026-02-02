@@ -2,39 +2,147 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>幾何透視實驗室</title>
     <style>
         :root { --primary: #2c3e50; --accent: #16a085; --bg: #f3f4f6; }
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; font-family: 'Segoe UI', sans-serif; background: var(--bg); overflow: hidden; }
-        #app { display: flex; flex-direction: column; height: 100vh; }
-        header { background: var(--primary); color: white; padding: 12px 20px; font-size: 20px; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
-        #workspace { display: flex; flex: 1; padding: 15px; gap: 15px; min-height: 0; }
-        .panel { flex: 1; background: white; border-radius: 8px; position: relative; border: 2px solid #ccc; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-        .label { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 4px 10px; border-radius: 4px; font-size: 14px; pointer-events: none; }
+        
+        /* 讓頁面可以捲動，解決按鈕看不到的問題 */
+        html, body { 
+            margin: 0; 
+            padding: 0; 
+            width: 100%; 
+            font-family: 'Segoe UI', sans-serif; 
+            background: var(--bg); 
+            overflow-x: hidden; /* 防止左右晃動 */
+            overflow-y: auto;   /* 允許上下捲動 */
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #app { 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 100vh;
+            padding-bottom: 80px; /* 底部留白，避開 iPad 手勢條 */
+        }
+
+        header { 
+            background: var(--primary); 
+            color: white; 
+            padding: 15px 20px; 
+            font-size: 20px; 
+            font-weight: bold; 
+            text-align: center;
+        }
+
+        /* 工作區設定：保證有高度 */
+        #workspace { 
+            display: flex; 
+            padding: 15px; 
+            gap: 15px; 
+            height: 50vh; /* 佔螢幕一半高度 */
+            min-height: 350px; /* 死也不會縮得比這小 */
+        }
+
+        /* 手機或直立 iPad 時改為直排 */
+        @media (max-width: 768px) {
+            #workspace {
+                flex-direction: column;
+                height: auto; 
+            }
+            .panel {
+                height: 350px; /* 強制給予高度 */
+                width: 100%;
+            }
+        }
+
+        .panel { 
+            flex: 1; 
+            background: white; 
+            border-radius: 8px; 
+            position: relative; 
+            border: 2px solid #ccc; 
+            overflow: hidden; 
+        }
+
+        .label { 
+            position: absolute; 
+            top: 10px; 
+            left: 10px; 
+            background: rgba(0,0,0,0.7); 
+            color: white; 
+            padding: 4px 10px; 
+            border-radius: 4px; 
+            font-size: 14px; 
+            pointer-events: none; 
+            z-index: 10;
+        }
+
         canvas#sectionCanvas { width: 100%; height: 100%; display: block; }
-        #controls { background: white; padding: 15px; border-top: 1px solid #ddd; display: flex; flex-direction: column; gap: 12px; align-items: center; }
-        .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
-        button { padding: 8px 14px; border: 1px solid #aaa; background: #fff; border-radius: 5px; cursor: pointer; transition: 0.2s; font-size: 14px; color: #444; }
-        button:hover { background: #f0f0f0; }
+
+        /* 按鈕區 */
+        #controls { 
+            background: white; 
+            padding: 20px; 
+            margin: 0 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+            align-items: center; 
+        }
+
+        .row { 
+            display: flex; 
+            gap: 10px; 
+            flex-wrap: wrap; 
+            justify-content: center; 
+            align-items: center; 
+        }
+
+        button { 
+            padding: 10px 18px; 
+            border: 1px solid #aaa; 
+            background: #fff; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            color: #444; 
+        }
+        button:active { background: #eee; }
         button.active { background: var(--primary); color: white; font-weight: bold; }
         .mode-btn.active { background: var(--accent); border-color: var(--accent); }
-        .slider-group { display: flex; align-items: center; gap: 10px; background: #eee; padding: 5px 15px; border-radius: 20px; }
-        input[type=range] { width: 200px; cursor: pointer; }
+
+        .slider-group { 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            background: #eee; 
+            padding: 10px 20px; 
+            border-radius: 30px; 
+            width: 100%;
+            max-width: 400px;
+            justify-content: center;
+        }
+        input[type=range] { flex: 1; cursor: pointer; height: 25px; }
     </style>
 </head>
 <body>
 
 <div id="app">
-    <header>幾何截面模擬器</header>
+    <header>幾何截面模擬器 V14</header>
+    
     <div id="workspace">
         <div class="panel" id="view3d">
-            <div class="label">3D 立體視角</div>
+            <div class="label">3D 立體視角 (可滑動旋轉)</div>
         </div>
         <div class="panel" id="view2d">
             <div class="label">2D 截面形狀</div>
             <canvas id="sectionCanvas"></canvas>
         </div>
     </div>
+
     <div id="controls">
         <div class="row">
             <button onclick="setShape('prism')" id="btn-prism">三角柱</button>
@@ -51,18 +159,22 @@
                 <button onclick="setMode('vertical')" id="mode-v" class="mode-btn">縱切 ( | )</button>
             </div>
             <div class="slider-group">
-                <span>位置調整：</span>
+                <span>位置：</span>
                 <input type="range" id="slider" min="-1.8" max="1.8" step="0.01" value="0">
             </div>
+        </div>
+        <div style="color:#888; font-size:12px; margin-top:5px;">
+            提示：如果在 iPad 上看不到按鈕，請往下滑動畫面
         </div>
     </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
 <script>
-    let scene, camera, renderer, mesh, slicePlane;
-    let currentShape = 'cone'; // 預設圓錐方便檢查
+    let scene, camera, renderer, mesh, slicePlane, controls;
+    let currentShape = 'cone'; 
     let cutMode = 'vertical'; 
     
     const canvas2d = document.getElementById('sectionCanvas');
@@ -70,7 +182,7 @@
     const container3d = document.getElementById('view3d');
     const container2d = document.getElementById('view2d');
 
-    // 定義幾何參數
+    // V12 的正確邏輯參數
     const SHAPES = {
         'sq_pyramid': { rTop: 0, rBot: 2.2, h: 4, seg: 4, rot: Math.PI/4, label: '四角錐' }, 
         'tri_pyramid': { rTop: 0, rBot: 2.2, h: 4, seg: 3, rot: 0, label: '三角錐' },
@@ -87,10 +199,15 @@
         
         camera = new THREE.PerspectiveCamera(45, container3d.clientWidth / container3d.clientHeight, 0.1, 100);
         camera.position.set(0, 3, 10); 
-        camera.lookAt(0, 0, 0);
-
+        
         renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container3d.clientWidth, container3d.clientHeight);
         container3d.appendChild(renderer.domElement);
+
+        // 加入軌道控制器，讓操作更順手
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
 
         scene.add(new THREE.AmbientLight(0xffffff, 0.6));
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -112,20 +229,24 @@
         setMode('vertical');
 
         window.addEventListener('resize', onResize);
-        onResize(); 
+        setTimeout(onResize, 100); // 確保載入後尺寸正確
         animate();
     }
 
     function onResize() {
-        if (container3d.clientWidth > 0) {
-            camera.aspect = container3d.clientWidth / container3d.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(container3d.clientWidth, container3d.clientHeight);
-        }
-        if (container2d.clientWidth > 0) {
-            canvas2d.width = container2d.clientWidth;
-            canvas2d.height = container2d.clientHeight;
-        }
+        // 確保不為 0，避免錯誤
+        const w = container3d.clientWidth || 300;
+        const h = container3d.clientHeight || 300;
+        
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+
+        const w2 = container2d.clientWidth || 300;
+        const h2 = container2d.clientHeight || 300;
+        canvas2d.width = w2;
+        canvas2d.height = h2;
+        
         draw2d();
     }
 
@@ -179,7 +300,9 @@
         const cx = w / 2;
         const cy = h / 2;
         const val = parseFloat(document.getElementById('slider').value);
-        const scale = 60; 
+        
+        // 自動縮放邏輯，避免圖形太大或太小
+        const scale = Math.min(w, h) / 7; 
         
         ctx2d.clearRect(0, 0, w, h);
         ctx2d.fillStyle = "#27ae60";
@@ -189,11 +312,8 @@
 
         const cfg = SHAPES[currentShape];
 
-        // ============================
-        // 模式 A: 橫切 (Horizontal)
-        // ============================
+        // 橫切 (Horizontal)
         if (cutMode === 'horizontal') {
-            // ... (橫切邏輯保持不變)
             if (currentShape === 'sphere') {
                 let r = Math.sqrt(Math.max(0, cfg.r**2 - val**2)) * scale;
                 ctx2d.arc(cx, cy, r, 0, Math.PI*2);
@@ -209,7 +329,6 @@
                     if (currentShape === 'cylinder' || currentShape === 'cone') {
                         ctx2d.arc(cx, cy, currentR * scale, 0, Math.PI*2);
                     } else if (currentShape === 'sq_pyramid') {
-                        // 四角錐 (轉正後橫切是正方形)
                         let side = currentR * scale * 1.414; 
                         ctx2d.rect(cx - side/2, cy - side/2, side, side);
                     } else {
@@ -218,9 +337,7 @@
                 }
             }
         } 
-        // ============================
-        // 模式 B: 縱切 (Vertical)
-        // ============================
+        // 縱切 (Vertical)
         else {
             let dist = Math.abs(val);
             let maxHeight = (cfg.h || 4) * scale;
@@ -241,9 +358,7 @@
                     if (w_slice > 0) ctx2d.rect(cx - w_slice/2, cy - maxHeight/2, w_slice, maxHeight);
                 }
             }
-            // ============================
-            // 重點修正：圓錐頂點切面
-            // ============================
+            // 圓錐 (修正邏輯)
             else if (currentShape === 'cone') {
                 if (dist < cfg.rBot) {
                     let botW = 2 * Math.sqrt(cfg.rBot**2 - dist**2) * scale;
@@ -251,23 +366,19 @@
                     let baseY = cy + maxHeight/2;
                     let topY = baseY - cutH;
                     
-                    ctx2d.moveTo(cx - botW/2, baseY); // 左下
-
-                    // 【關鍵修正】：如果非常接近中心，畫三角形；否則畫雙曲線
+                    ctx2d.moveTo(cx - botW/2, baseY); 
                     if (dist < 0.05) {
-                        ctx2d.lineTo(cx, topY); // 直接連到頂點 (三角形)
+                        ctx2d.lineTo(cx, topY); // 中間：三角形
                     } else {
-                        // 畫拱形 (雙曲線模擬)
-                        ctx2d.quadraticCurveTo(cx, topY - (cutH*0.05), cx + botW/2, baseY);
+                        ctx2d.quadraticCurveTo(cx, topY - (cutH*0.05), cx + botW/2, baseY); // 旁側：雙曲線
                     }
-                    
-                    ctx2d.lineTo(cx + botW/2, baseY); // 右下
-                    ctx2d.closePath(); // 封底
+                    ctx2d.lineTo(cx + botW/2, baseY); 
+                    ctx2d.closePath(); 
                 }
             }
+            // 四角錐 (修正邏輯)
             else if (currentShape === 'sq_pyramid') {
-                // 四角錐 (正放)
-                let L = cfg.rBot * Math.sqrt(2); // 邊長
+                let L = cfg.rBot * Math.sqrt(2); 
                 let sideDist = L / 2; 
                 if (dist < sideDist) {
                     let botW = L * scale; 
@@ -310,21 +421,18 @@
 
     function animate() {
         requestAnimationFrame(animate);
+        if(controls) controls.update(); // 更新控制器
+
         const val = parseFloat(document.getElementById('slider').value);
-        
         if (cutMode === 'horizontal') {
             slicePlane.position.set(0, val, 0);
         } else {
             slicePlane.position.set(val, 0, 0);
         }
-        
         renderer.render(scene, camera);
-        // draw2d(); // 這裡不需要重複呼叫，onResize 和滑桿事件會處理
     }
 
-    // 監聽滑桿即時更新 2D
     document.getElementById('slider').addEventListener('input', draw2d);
-
     init();
 </script>
 </body>
